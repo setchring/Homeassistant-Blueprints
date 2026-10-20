@@ -1,5 +1,5 @@
 blueprint:
-  name: Sunrise Light Simulator (Startet VOR Weckzeit - Action Fix)
+  name: Sunrise Light Simulator (Startet VOR Weckzeit - Final Fix)
   description: >
     Gradually brighten lights and change color to simulate a natural sunrise. 
     This version dynamically calculates the start time so that the sunrise 
@@ -178,32 +178,12 @@ variables:
   presence_state: !input presence_state
   presence_logic: !input presence_logic
   auto_off_minutes: !input auto_off_minutes
-  total_steps: "{{ (duration * 60 / step_interval) | int }}"
-  start_kelvin: "{{ start_color_temp | int(2000) }}"
-  end_kelvin: "{{ end_color_temp | int(5500) }}"
   target_lights: !input target_lights
-  monitor_entity: >
-    {% if target_lights.entity_id is defined %}
-      {% if target_lights.entity_id is string %}
-        {{ target_lights.entity_id }}
-      {% else %}
-        {{ target_lights.entity_id }}
-      {% endif %}
-    {% else %}
-      none
-    {% endif %}
-  light_is_on: "{{ monitor_entity != 'none' and is_state(monitor_entity, 'on') }}"
-  effective_start_brightness: >
-    {% if light_is_on and state_attr(monitor_entity, 'brightness') %}
-      {{ [(state_attr(monitor_entity, 'brightness') / 255 * 100) | round(0), (max_brightness | int)] | min }}
-    {% else %}
-      {{ startup_brightness | int }}
-    {% endif %}
 
 trigger:
   - platform: template
     value_template: >
-      {% set duration_sec = (duration | int) * 60 %}
+      {% set duration_sec = (duration | int(45)) * 60 %}
       {% set now_ts = as_timestamp(now()) | int %}
       
       {% if states(alarm_source) is defined and states(alarm_source) not in ['unknown', 'unavailable'] %}
@@ -240,6 +220,30 @@ condition:
 action:
   - choose: []
     default: !input pre_sunrise_actions
+  
+  # Lokale Variablen-Zuweisung direkt vor Ausführung der Licht-Steuerung
+  - variables:
+      total_steps: "{{ (duration | int * 60 / step_interval | int) | int }}"
+      start_kelvin: "{{ start_color_temp | int(2000) }}"
+      end_kelvin: "{{ end_color_temp | int(5500) }}"
+      monitor_entity: >
+        {% if target_lights.entity_id is defined %}
+          {% if target_lights.entity_id is string %}
+            {{ target_lights.entity_id }}
+          {% else %}
+            {{ target_lights.entity_id }}
+          {% endif %}
+        {% else %}
+          none
+        {% endif %}
+      light_is_on: "{{ monitor_entity != 'none' and is_state(monitor_entity, 'on') }}"
+      effective_start_brightness: >
+        {% if monitor_entity != 'none' and is_state(monitor_entity, 'on') and state_attr(monitor_entity, 'brightness') %}
+          {{ [(state_attr(monitor_entity, 'brightness') / 255 * 100) | round(0), (max_brightness | int)] | min }}
+        {% else %}
+          {{ startup_brightness | int }}
+        {% endif %}
+
   - choose:
       - conditions:
           - condition: template
@@ -248,12 +252,4 @@ action:
           - action: light.turn_on
             target: !input target_lights
             data:
-              brightness_pct: "{{ startup_brightness | int }}"
-              color_temp_kelvin: "{{ start_kelvin | int }}"
-            continue_on_error: true
-          - delay:
-              seconds: 2
-    default: []
-  - repeat:
-      while:
-        - condition: template
+              brightness_pct: "{{ startup_brightness | int(1) }}"
