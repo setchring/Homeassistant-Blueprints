@@ -1,0 +1,260 @@
+blueprint:
+  name: Sunrise Light Simulator (Startet VOR Weckzeit)
+  description: >
+    Gradually brighten lights and change color to simulate a natural sunrise. 
+    This version dynamically calculates the start time so that the sunrise 
+    is COMPLETED at your set alarm time (Alarm Time minus Duration).
+    Supports fixed times (HH:MM:SS) or alarm entities.
+  domain: automation
+  input:
+    target_lights:
+      name: Lights
+      description: Select lights by entity, area, device, or label for the sunrise simulation. Pick individual light entities to enable stop-on-manual-off and already-on detection, which only check the first entity listed.
+      selector:
+        target: {}
+    alarm_source:
+      name: Alarm Time or Entity
+      description: >
+        Enter a fixed time (e.g., 07:00:00) OR an entity ID that contains the alarm time 
+        (e.g., sensor.your_phone_next_alarm or input_datetime.your_wake_up_time).
+      default: "07:00:00"
+      selector:
+        text: {}
+    duration:
+      name: Duration (minutes)
+      description: How many minutes BEFORE the alarm time the sunrise should start.
+      default: 45
+      selector:
+        number:
+          min: 5
+          max: 120
+          step: 5
+          unit_of_measurement: minutes
+    days_of_week:
+      name: Days of Week (Optional)
+      description: Select which days to run the sunrise simulation. Leave empty to run every day.
+      default: []
+      selector:
+        select:
+          options:
+            - label: Monday
+              value: "mon"
+            - label: Tuesday
+              value: "tue"
+            - label: Wednesday
+              value: "wed"
+            - label: Thursday
+              value: "thu"
+            - label: Friday
+              value: "fri"
+            - label: Saturday
+              value: "sat"
+            - label: Sunday
+              value: "sun"
+          multiple: true
+    presence_entities:
+      name: Presence Check Entities (Optional)
+      description: Optional entity or entities (e.g. person or binary_sensor) that must be in the required state for the sunrise to run. Leave empty to always run.
+      default: []
+      selector:
+        entity:
+          multiple: true
+    presence_state:
+      name: Required Presence State
+      description: The state the presence entities must be in for the sunrise to trigger (e.g. "home", "on"). Only used if Presence Check Entities is set.
+      default: "home"
+      selector:
+        text: {}
+    presence_logic:
+      name: Presence Match Logic
+      description: When multiple presence entities are selected, require ANY of them (e.g. someone is home) or ALL of them (e.g. everyone is home) to be in the required state.
+      default: "any"
+      selector:
+        select:
+          options:
+            - label: "Any - at least one entity matches"
+              value: "any"
+            - label: "All - every entity matches"
+              value: "all"
+    startup_brightness:
+      name: Startup Brightness (%)
+      description: Initial brightness when the sunrise simulation starts. Some lights (especially Govee) have issues with very low startup commands. Try 5-10% instead of 1% if your light flickers or doesn't respond at startup.
+      default: 1
+      selector:
+        number:
+          min: 1
+          max: 100
+          step: 1
+          unit_of_measurement: "%"
+    max_brightness:
+      name: Maximum Brightness
+      description: The maximum brightness level to reach at the end of the sunrise
+      default: 100
+      selector:
+        number:
+          min: 1
+          max: 100
+          step: 1
+          unit_of_measurement: "%"
+    start_color_temp:
+      name: Starting Color Temperature
+      description: The warm color to start the sunrise with. Presets are suggested values; use custom kelvin for fine-tuning (1800-6500K).
+      default: "2000"
+      selector:
+        select:
+          options:
+            - label: "Candlelight (1800K)"
+              value: "1800"
+            - label: "Warm White (2000K) - Recommended"
+              value: "2000"
+            - label: "Soft White (2700K)"
+              value: "2700"
+            - label: "Neutral (3000K)"
+              value: "3000"
+          custom_value: true
+    end_color_temp:
+      name: Ending Color Temperature
+      description: The cool daylight color to end the sunrise with. Presets are suggested values; use custom kelvin for fine-tuning (1800-6500K).
+      default: "5500"
+      selector:
+        select:
+          options:
+            - label: "Neutral (3000K)"
+              value: "3000"
+            - label: "Cool White (4000K)"
+              value: "4000"
+            - label: "Daylight (5000K)"
+              value: "5000"
+            - label: "Bright Daylight (5500K) - Recommended"
+              value: "5500"
+            - label: "Bright Cool Daylight (6500K)"
+              value: "6500"
+          custom_value: true
+    step_interval:
+      name: Step Interval (seconds)
+      description: >
+        Time between brightness changes. Lower values = smoother transitions but more service calls; higher values = more compatible with all lights. Device recommendations: LIFX 5-10s, Philips Hue 10-15s, Govee/MQTT 15-30s, Generic dimmers 10-20s. If you see jarring transitions, try increasing this value.
+      default: 30
+      selector:
+        number:
+          min: 5
+          max: 60
+          step: 5
+          unit_of_measurement: seconds
+    pre_sunrise_actions:
+      name: Pre-Sunrise Actions (Optional)
+      description: Actions to run before the sunrise simulation starts. For example, start a nature sounds playlist, open the blinds, or send a notification.
+      default: []
+      selector:
+        action: {}
+    post_sunrise_actions:
+      name: Post-Sunrise Actions (Optional)
+      description: Actions to run once the sunrise reaches full brightness. For example, raise the thermostat, announce the weather, or stop a playlist. These are skipped if the light is turned off before the sunrise finishes.
+      default: []
+      selector:
+        action: {}
+    auto_off_minutes:
+      name: Auto-Off Timeout (Optional)
+      description: Turn the light(s) off automatically this many minutes after the sunrise completes. Leave at 0 to disable.
+      default: 0
+      selector:
+        number:
+          min: 0
+          max: 240
+          step: 5
+          unit_of_measurement: minutes
+
+variables:
+  duration: !input duration
+  max_brightness: !input max_brightness
+  step_interval: !input step_interval
+  startup_brightness: !input startup_brightness
+  days_of_week: !input days_of_week
+  start_color_temp: !input start_color_temp
+  end_color_temp: !input end_color_temp
+  presence_entities: !input presence_entities
+  presence_state: !input presence_state
+  presence_logic: !input presence_logic
+  auto_off_minutes: !input auto_off_minutes
+  total_steps: "{{ (duration * 60 / step_interval) | int }}"
+  start_kelvin: "{{ start_color_temp | int(2000) }}"
+  end_kelvin: "{{ end_color_temp | int(5500) }}"
+  target_lights: !input target_lights
+  monitor_entity: >
+    {% if target_lights.entity_id is defined %}
+      {% if target_lights.entity_id is string %}
+        {{ target_lights.entity_id }}
+      {% else %}
+        {{ target_lights.entity_id[0] }}
+      {% endif %}
+    {% else %}
+      none
+    {% endif %}
+  light_is_on: "{{ monitor_entity != 'none' and is_state(monitor_entity, 'on') }}"
+  effective_start_brightness: >
+    {% if light_is_on and state_attr(monitor_entity, 'brightness') %}
+      {{ [(state_attr(monitor_entity, 'brightness') / 255 * 100) | round(0), max_brightness] | min }}
+    {% else %}
+      {{ startup_brightness }}
+    {% endif %}
+
+trigger:
+  - platform: template
+    value_template: >
+      {% set source = '!input alarm_source' %}
+      {% set duration_sec = (!input duration) * 60 %}
+      {% set now_ts = as_timestamp(now()) | int %}
+      
+      {% if states(source) is defined and states(source) not in ['unknown', 'unavailable'] %}
+        {% set alarm_str = states(source) %}
+      {% else %}
+        {% set alarm_str = source %}
+      {% endif %}
+      
+      {% if alarm_str is string and ':' in alarm_str %}
+        {% if alarm_str | length <= 5 %}
+          {% set alarm_str = alarm_str ~ ':00' %}
+        {% endif %}
+        {% set alarm_date = now().strftime('%Y-%m-%d') ~ ' ' ~ alarm_str %}
+        {% set alarm_ts = as_timestamp(time_str ~ alarm_date) | int %}
+        {% if alarm_ts < now_ts - 3600 %}
+          {% set alarm_ts = alarm_ts + 86400 %}
+        {% endif %}
+      {% else %}
+        {% set alarm_ts = as_timestamp(alarm_str) | int(0) %}
+      {% endif %}
+      
+      {{ alarm_ts > 0 and now_ts == (alarm_ts - duration_sec) }}
+
+condition:
+  - condition: template
+    value_template: "{{ days_of_week | length == 0 or now().strftime('%a').lower()[:3] in days_of_week }}"
+  - condition: template
+    value_template: >
+      {{ presence_entities | length == 0 or (presence_logic == 'all' and presence_entities | reject('is_state', presence_state) | list | length == 0) or (presence_logic != 'all' and presence_entities | select('is_state', presence_state) | list | length > 0) }}
+
+action:
+  - choose: []
+    default: !input pre_sunrise_actions
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ not light_is_on }}"
+        sequence:
+          - action: light.turn_on
+            target: !input target_lights
+            data:
+              brightness_pct: "{{ startup_brightness }}"
+              color_temp_kelvin: "{{ start_kelvin }}"
+            continue_on_error: true
+          - delay:
+              seconds: 2
+    default: []
+  - repeat:
+      while:
+        - condition: template
+          value_template: "{{ repeat.index <= total_steps }}"
+        - condition: template
+          value_template: "{{ monitor_entity == 'none' or is_state(monitor_entity, 'on') }}"
+      sequence:
+        - action: light.turn_on
