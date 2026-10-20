@@ -1,5 +1,5 @@
 blueprint:
-  name: Sunrise Light Simulator (Startet VOR Weckzeit - Final Fix)
+  name: Sunrise Light Simulator (Startet VOR Weckzeit - Stabilisiert)
   description: >
     Gradually brighten lights and change color to simulate a natural sunrise. 
     This version dynamically calculates the start time so that the sunrise 
@@ -220,36 +220,35 @@ condition:
 action:
   - choose: []
     default: !input pre_sunrise_actions
-  
-  # Lokale Variablen-Zuweisung direkt vor Ausführung der Licht-Steuerung
-  - variables:
-      total_steps: "{{ (duration | int * 60 / step_interval | int) | int }}"
-      start_kelvin: "{{ start_color_temp | int(2000) }}"
-      end_kelvin: "{{ end_color_temp | int(5500) }}"
-      monitor_entity: >
-        {% if target_lights.entity_id is defined %}
-          {% if target_lights.entity_id is string %}
-            {{ target_lights.entity_id }}
-          {% else %}
-            {{ target_lights.entity_id }}
-          {% endif %}
-        {% else %}
-          none
-        {% endif %}
-      light_is_on: "{{ monitor_entity != 'none' and is_state(monitor_entity, 'on') }}"
-      effective_start_brightness: >
-        {% if monitor_entity != 'none' and is_state(monitor_entity, 'on') and state_attr(monitor_entity, 'brightness') %}
-          {{ [(state_attr(monitor_entity, 'brightness') / 255 * 100) | round(0), (max_brightness | int)] | min }}
-        {% else %}
-          {{ startup_brightness | int }}
-        {% endif %}
 
   - choose:
       - conditions:
           - condition: template
-            value_template: "{{ not light_is_on }}"
+            value_template: >
+              {% set monitor_entity = target_lights.entity_id if target_lights.entity_id is defined else 'none' %}
+              {% if monitor_entity is not string and monitor_entity != 'none' %}
+                {% set monitor_entity = monitor_entity[0] %}
+              {% endif %}
+              {{ monitor_entity == 'none' or not is_state(monitor_entity, 'on') }}
         sequence:
           - action: light.turn_on
             target: !input target_lights
             data:
               brightness_pct: "{{ startup_brightness | int(1) }}"
+              color_temp_kelvin: "{{ start_color_temp | int(2000) }}"
+            continue_on_error: true
+          - delay:
+              seconds: 2
+    default: []
+
+  - repeat:
+      while:
+        - condition: template
+          value_template: >
+            {% set total_steps = (duration | int(45) * 60 / step_interval | int(30)) | int %}
+            {{ repeat.index <= total_steps }}
+        - condition: template
+          value_template: >
+            {% set monitor_entity = target_lights.entity_id if target_lights.entity_id is defined else 'none' %}
+            {% if monitor_entity is not string and monitor_entity != 'none' %}
+              {% set monitor_entity = monitor_entity[0] %}
