@@ -1,5 +1,5 @@
 blueprint:
-  name: Sunrise Light Simulator (Startet VOR Weckzeit)
+  name: Sunrise Light Simulator (Startet VOR Weckzeit - Fix)
   description: >
     Gradually brighten lights and change color to simulate a natural sunrise. 
     This version dynamically calculates the start time so that the sunrise 
@@ -164,7 +164,9 @@ blueprint:
           step: 5
           unit_of_measurement: minutes
 
+# Variablen global deklarieren, damit der Trigger darauf zugreifen kann
 variables:
+  alarm_source: !input alarm_source
   duration: !input duration
   max_brightness: !input max_brightness
   step_interval: !input step_interval
@@ -201,26 +203,29 @@ variables:
 trigger:
   - platform: template
     value_template: >
-      {% set source = '!input alarm_source' %}
-      {% set duration_sec = (!input duration) * 60 %}
+      {% set duration_sec = duration * 60 %}
       {% set now_ts = as_timestamp(now()) | int %}
       
-      {% if states(source) is defined and states(source) not in ['unknown', 'unavailable'] %}
-        {% set alarm_str = states(source) %}
+      {# Prüfen, ob alarm_source eine existierende Entität ist #}
+      {% if states(alarm_source) is defined and states(alarm_source) not in ['unknown', 'unavailable'] %}
+        {% set alarm_str = states(alarm_source) %}
       {% else %}
-        {% set alarm_str = source %}
+        {% set alarm_str = alarm_source %}
       {% endif %}
       
+      {# Verarbeitung von festen Uhrzeit-Strings (z.B. "07:00:00") #}
       {% if alarm_str is string and ':' in alarm_str %}
         {% if alarm_str | length <= 5 %}
           {% set alarm_str = alarm_str ~ ':00' %}
         {% endif %}
         {% set alarm_date = now().strftime('%Y-%m-%d') ~ ' ' ~ alarm_str %}
-        {% set alarm_ts = as_timestamp(time_str ~ alarm_date) | int %}
+        {% set alarm_ts = as_timestamp(alarm_date) | int %}
+        {# Wenn die Weckzeit heute bereits vorbei ist, rechne für morgen #}
         {% if alarm_ts < now_ts - 3600 %}
           {% set alarm_ts = alarm_ts + 86400 %}
         {% endif %}
       {% else %}
+        {# Verarbeitung von vollen ISO-Zeitstempeln aus Entitäten #}
         {% set alarm_ts = as_timestamp(alarm_str) | int(0) %}
       {% endif %}
       
@@ -249,12 +254,3 @@ action:
             continue_on_error: true
           - delay:
               seconds: 2
-    default: []
-  - repeat:
-      while:
-        - condition: template
-          value_template: "{{ repeat.index <= total_steps }}"
-        - condition: template
-          value_template: "{{ monitor_entity == 'none' or is_state(monitor_entity, 'on') }}"
-      sequence:
-        - action: light.turn_on
