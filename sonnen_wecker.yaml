@@ -1,5 +1,5 @@
 blueprint:
-  name: Sunrise Light Simulator (Startet VOR Weckzeit - Android Fix)
+  name: Sunrise Light Simulator (Startet VOR Weckzeit - Action Fix)
   description: >
     Gradually brighten lights and change color to simulate a natural sunrise. 
     This version dynamically calculates the start time so that the sunrise 
@@ -187,7 +187,7 @@ variables:
       {% if target_lights.entity_id is string %}
         {{ target_lights.entity_id }}
       {% else %}
-        {{ target_lights.entity_id[0] }}
+        {{ target_lights.entity_id }}
       {% endif %}
     {% else %}
       none
@@ -195,29 +195,26 @@ variables:
   light_is_on: "{{ monitor_entity != 'none' and is_state(monitor_entity, 'on') }}"
   effective_start_brightness: >
     {% if light_is_on and state_attr(monitor_entity, 'brightness') %}
-      {{ [(state_attr(monitor_entity, 'brightness') / 255 * 100) | round(0), max_brightness] | min }}
+      {{ [(state_attr(monitor_entity, 'brightness') / 255 * 100) | round(0), (max_brightness | int)] | min }}
     {% else %}
-      {{ startup_brightness }}
+      {{ startup_brightness | int }}
     {% endif %}
 
 trigger:
   - platform: template
     value_template: >
-      {% set duration_sec = duration * 60 %}
+      {% set duration_sec = (duration | int) * 60 %}
       {% set now_ts = as_timestamp(now()) | int %}
       
-      {# Prüfen, ob alarm_source eine existierende Entität ist #}
       {% if states(alarm_source) is defined and states(alarm_source) not in ['unknown', 'unavailable'] %}
         {% set source_val = states(alarm_source) %}
       {% else %}
         {% set source_val = alarm_source %}
       {% endif %}
       
-      {# Wenn es ein ISO-Zeitstempel (wie vom Android-Wecker) ist, direkt konvertieren #}
       {% if 'T' in source_val and ('+' in source_val or 'Z' in source_val) %}
         {% set alarm_ts = as_timestamp(source_val) | int(0) %}
       {% elif ':' in source_val %}
-        {# Verarbeitung von einfachen Uhrzeit-Strings (z.B. "07:00:00") #}
         {% set alarm_str = source_val %}
         {% if alarm_str | length <= 5 %}
           {% set alarm_str = alarm_str ~ ':00' %}
@@ -231,7 +228,6 @@ trigger:
         {% set alarm_ts = as_timestamp(source_val) | int(0) %}
       {% endif %}
       
-      {# Trigger löst aus, wenn die aktuelle Zeit mit der Ziel-Startzeit übereinstimmt #}
       {{ alarm_ts > 0 and now_ts == (alarm_ts - duration_sec) }}
 
 condition:
@@ -252,3 +248,12 @@ action:
           - action: light.turn_on
             target: !input target_lights
             data:
+              brightness_pct: "{{ startup_brightness | int }}"
+              color_temp_kelvin: "{{ start_kelvin | int }}"
+            continue_on_error: true
+          - delay:
+              seconds: 2
+    default: []
+  - repeat:
+      while:
+        - condition: template
