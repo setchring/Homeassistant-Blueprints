@@ -1,5 +1,5 @@
 blueprint:
-  name: Sunrise Light Simulator (Startet VOR Weckzeit - Syntax Fix)
+  name: Sunrise Light Simulator (Startet VOR Weckzeit - Finaler Fix)
   description: >
     Gradually brighten lights and change color to simulate a natural sunrise. 
     This version dynamically calculates the start time so that the sunrise 
@@ -225,7 +225,7 @@ action:
       - conditions:
           - condition: template
             value_template: >
-              {% set ent = target_lights.entity_id if target_lights.entity_id is defined else 'none' %}
+              {% set ent = target_lights.entity_id | default('none') %}
               {% set ent_id = ent if ent is string else (ent[0] if ent is iterable and ent | length > 0 else 'none') %}
               {{ ent_id == 'none' or not is_state(ent_id, 'on') }}
         sequence:
@@ -247,8 +247,10 @@ action:
             {{ repeat.index <= total_steps }}
         - condition: template
           value_template: >
-            {% set ent = target_lights.entity_id if target_lights.entity_id is defined else 'none' %}
+            {% set ent = target_lights.entity_id | default('none') %}
             {% set ent_id = ent if ent is string else (ent[0] if ent is iterable and ent | length > 0 else 'none') %}
             {{ ent_id == 'none' or is_state(ent_id, 'on') }}
       sequence:
         - action: light.turn_on
+          target: !input target_lights
+          data:
